@@ -1,0 +1,6 @@
+{
+  "name": "HUMASON - Sonic Archivist",
+  "description": "Ethnomusicological audio repository and premier sound marketplace featuring 3-click fast licensing, an interactive scientific atlas of North African soundscapes, thematic audio packs, enterprise vaults, and contributor deposits.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

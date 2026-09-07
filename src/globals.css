@@ -1,0 +1,176 @@
+/* ==========================================================================
+   HUMASON Official Theme & Design System - globals.css
+   Authentic Maghrebine & High-Tech Ethnomusicology Aesthetics
+   ========================================================================== */
+
+@import "tailwindcss";
+
+/* --------------------------------------------------------------------------
+   Tailwind CSS v4 @theme Declarations & CSS Custom Properties
+   -------------------------------------------------------------------------- */
+@theme {
+  /* Maghrebine Heritage & Dark Studio Surfaces */
+  --color-dark-bg: #0B0E14;          /* Nuit Saharienne / Fond Studio */
+  --color-dark-surface: #131822;     /* Surface d'Archivage */
+  --color-dark-border: #222B3D;      /* Bordure ciselée */
+  --color-dark-card: #171E2C;        /* Carte zellige sombre */
+
+  /* Maghrebine Colors */
+  --color-humason-sidi-blue: #00A6D6;      /* Bleu Sidi Bou Saïd / Mer Méditerranée */
+  --color-humason-terracotta: #D9532F;     /* Terre Cuite / Poterie de Sejnane & Nabeul */
+  --color-humason-sand-gold: #C99738;      /* Ocre Sable Doré / Épices & Cuivre */
+  --color-humason-moroccan-teal: #00B4B6;  /* Turquoise Zellige / Faïence */
+  --color-humason-copper: #BD6B39;         /* Cuivre Rouge Martelé */
+
+  /* Aliases for compatibility */
+  --color-humason-cyan: #00B4D8;
+  --color-humason-cyan-glow: rgba(0, 180, 216, 0.25);
+  --color-humason-gold: #C99738;
+  --color-humason-gold-hover: #AF812A;
+  --color-humason-gold-glow: rgba(201, 151, 56, 0.25);
+
+  /* Typography Colors */
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #64748B;
+}
+
+:root {
+  /* Maghrebine Colors in CSS Vars */
+  --sidi-blue: #00A6D6;
+  --sidi-blue-dark: #007A9E;
+  --terracotta: #D9532F;
+  --terracotta-hover: #BA4120;
+  --sand-gold: #C99738;
+  --sand-gold-hover: #AF812A;
+  --moroccan-teal: #00B4B6;
+  --copper: #BD6B39;
+
+  --dark-bg: #0B0E14;
+  --dark-surface: #131822;
+  --dark-border: #222B3D;
+  --dark-card: #171E2C;
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+
+  --humason-gold: #C99738;
+  --humason-cyan: #00B4D8;
+}
+
+/* --------------------------------------------------------------------------
+   Base Styling
+   -------------------------------------------------------------------------- */
+@layer base {
+  body {
+    background-color: var(--dark-bg);
+    color: var(--text-primary);
+    font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Maghrebine Glassmorphism Panels & Cards
+   -------------------------------------------------------------------------- */
+.glass-panel {
+  background: rgba(19, 24, 34, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(34, 43, 61, 0.85);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+}
+
+.glass-panel-sidi {
+  background: rgba(19, 24, 34, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 166, 214, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), 0 0 16px rgba(0, 166, 214, 0.12);
+}
+
+.glass-panel-terracotta {
+  background: rgba(19, 24, 34, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(217, 83, 47, 0.35);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), 0 0 16px rgba(217, 83, 47, 0.15);
+}
+
+.glass-panel-gold {
+  background: rgba(19, 24, 34, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(201, 151, 56, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), 0 0 16px rgba(201, 151, 56, 0.12);
+}
+
+.glass-card {
+  background: rgba(19, 24, 34, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #222B3D;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: rgba(23, 30, 44, 0.85);
+  border-color: rgba(0, 166, 214, 0.4);
+  box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 166, 214, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   Maghrebine Glow & Button Presets
+   -------------------------------------------------------------------------- */
+.btn-sidi-blue {
+  background-color: #00A6D6;
+  color: #0B0E14;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(0, 166, 214, 0.3);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-sidi-blue:hover {
+  background-color: #0093BE;
+  box-shadow: 0 4px 18px rgba(0, 166, 214, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-terracotta {
+  background-color: #D9532F;
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(217, 83, 47, 0.3);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-terracotta:hover {
+  background-color: #C04320;
+  box-shadow: 0 4px 18px rgba(217, 83, 47, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-sand-gold {
+  background-color: #C99738;
+  color: #0B0E14;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(201, 151, 56, 0.3);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-sand-gold:hover {
+  background-color: #AF812A;
+  box-shadow: 0 4px 18px rgba(201, 151, 56, 0.5);
+  transform: translateY(-1px);
+}
+
+/* --------------------------------------------------------------------------
+   Maghrebine Motif & Topographic Patterns
+   -------------------------------------------------------------------------- */
+.bg-maghreb-pattern {
+  background-color: #0B0E14;
+  background-image: radial-gradient(rgba(0, 166, 214, 0.1) 1px, transparent 1px), radial-gradient(rgba(201, 151, 56, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: 0 0, 14px 14px;
+}
