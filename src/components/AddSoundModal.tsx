@@ -5,128 +5,15 @@ import { AudioFormat, SoundItem, SoundType, UserSettings } from '../types';
 import { TRANSLATIONS } from '../data/mockData';
 import { reverseGeocodeCoords, formatGpsCoordinates, parseGpsInput, getClosestOfflineLocation } from '../services/geoService';
 import { startSynthAudio, stopSynthAudio } from '../services/audioSynth';
+import { optimizeImageFile } from '../services/soundDatabase';
 import { AudioWaveformCanvas } from './AudioWaveformCanvas';
+import { QUICK_LOCATIONS, ACOUSTIC_GENRES } from '../data/soundConstants';
 
 interface AddSoundModalProps {
   settings: UserSettings;
   onClose: () => void;
-  onAddSound: (newSound: SoundItem) => void;
+  onAddSound: (newSound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
 }
-
-// Preset locations for quick snapping
-const QUICK_LOCATIONS = [
-  { name: 'Bizerte (Cap Blanc), Tunisia', lat: 37.2744, lng: 9.8739 },
-  { name: 'Tunis Médina, Tunisia', lat: 36.7992, lng: 10.1706 },
-  { name: 'Sidi Bou Said, Tunisia', lat: 36.8703, lng: 10.3417 },
-  { name: 'Sousse (Ribat & Médina), Tunisia', lat: 35.8256, lng: 10.6369 },
-  { name: 'Djerba (Houmt Souk), Tunisia', lat: 33.8076, lng: 10.8451 },
-  { name: 'Tozeur (Chott El Djérid), Tunisia', lat: 33.9197, lng: 8.1335 },
-  { name: 'Sfax (Médina & Port), Tunisia', lat: 34.7406, lng: 10.7603 },
-  { name: 'Kairouan, Tunisia', lat: 35.6781, lng: 10.0963 },
-  { name: 'Casbah d\'Alger, Algérie', lat: 36.7853, lng: 3.0600 },
-  { name: 'Marrakech (Médina), Maroc', lat: 31.6295, lng: -7.9811 }
-];
-
-// Rich acoustic genres with presets & default artwork
-const ACOUSTIC_GENRES: {
-  id: SoundType;
-  label: string;
-  category: string;
-  defaultImage: string;
-  defaultDuration: string;
-}[] = [
-  {
-    id: 'coastal',
-    label: '🌊 Vagues Côtières & Brise Méditerranéenne',
-    category: 'Environnement Marin',
-    defaultImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '04:15'
-  },
-  {
-    id: 'medina',
-    label: '🕌 Ambiance & Ruelles de la Médina',
-    category: 'Patrimoine Urbain',
-    defaultImage: 'https://images.unsplash.com/photo-1548013146-72479768bada?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '05:30'
-  },
-  {
-    id: 'oud',
-    label: '🎻 Oud Arbi & Cordes Traditionnelles',
-    category: 'Organologie & Cordes',
-    defaultImage: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '03:45'
-  },
-  {
-    id: 'nay',
-    label: '🪈 Flûte Nay & Souffle Soufi',
-    category: 'Instruments à Vent',
-    defaultImage: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '04:50'
-  },
-  {
-    id: 'mezwed',
-    label: '🎺 Mezwed & Cornemuse Populaire',
-    category: 'Tradition Populaire',
-    defaultImage: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '03:20'
-  },
-  {
-    id: 'darbuka',
-    label: '🪘 Darbuka & Rythmes Maqsum',
-    category: 'Percussions Dynamiques',
-    defaultImage: 'https://images.unsplash.com/photo-1519892300165-cb5542fb47c7?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '02:55'
-  },
-  {
-    id: 'bendir',
-    label: '🥁 Bendir & Rituels Soufis',
-    category: 'Musique Sacrée & Transe',
-    defaultImage: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '06:10'
-  },
-  {
-    id: 'malouf',
-    label: '🎼 Chant & Orchestre Malouf Andalous',
-    category: 'Musique Savante',
-    defaultImage: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '05:12'
-  },
-  {
-    id: 'gnawa',
-    label: '🪕 Guembri & Transe Gnawa / Stambali',
-    category: 'Patrimoine Rhapsodique',
-    defaultImage: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '07:40'
-  },
-  {
-    id: 'desert',
-    label: '🏜️ Dunes & Silence du Sahara',
-    category: 'Paysage Acoustique Désert',
-    defaultImage: 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '08:00'
-  },
-  {
-    id: 'oasis',
-    label: '🌴 Sources d\'Eau & Palmiers d\'Oasis',
-    category: 'Hydro-acoustique',
-    defaultImage: 'https://images.unsplash.com/photo-1518457607834-6e8d80c183c5?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '04:30'
-  },
-  {
-    id: 'biophony',
-    label: '🦩 Bio-acoustique & Faune d\'Ichkeul',
-    category: 'Bio-acoustique Sauvage',
-    defaultImage: 'https://images.unsplash.com/photo-1444464666168-49d633b86797?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '06:45'
-  },
-  {
-    id: 'custom',
-    label: '✨ Profil Personnalisé / Prise de Son Directe',
-    category: 'Captation Libre',
-    defaultImage: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1200&auto=format&fit=crop',
-    defaultDuration: '04:00'
-  }
-];
 
 export const AddSoundModal: React.FC<AddSoundModalProps> = ({
   settings,
@@ -173,8 +60,24 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
   const [isImageUploaded, setIsImageUploaded] = useState<boolean>(true);
   const [isDraggingImage, setIsDraggingImage] = useState<boolean>(false);
 
+  // Binary Blob holders for persistent IndexedDB storage
+  const [audioFileBlob, setAudioFileBlob] = useState<Blob | null>(null);
+  const [imageFileBlob, setImageFileBlob] = useState<Blob | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Escape key close handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        stopSynthAudio();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // Map Refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -373,6 +276,7 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
     const sizeInMB = (file.size / (1024 * 1024)).toFixed(1);
     setAudioFileSize(`${sizeInMB} MB`);
     setIsAudioUploaded(true);
+    setAudioFileBlob(file);
 
     // Create readable object URL for instant pre-listening
     const objectUrl = URL.createObjectURL(file);
@@ -419,21 +323,29 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
     }
   };
 
-  // Image Selection Handler (optimizing thumbnail)
-  const handleImageFileSelect = (file: File) => {
+  // Image Selection Handler (optimizing thumbnail into binary webp blob)
+  const handleImageFileSelect = async (file: File) => {
     if (!file) return;
     setImageFileName(file.name);
     const sizeInKB = Math.round(file.size / 1024);
     setImageFileSize(`${sizeInKB} KB`);
     setIsImageUploaded(true);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setImage(event.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimized = await optimizeImageFile(file, 800, 800, 0.82);
+      setImage(optimized.dataUrl);
+      setImageFileBlob(optimized.blob);
+    } catch (err) {
+      console.warn('Image optimization fallback:', err);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setImage(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+      setImageFileBlob(file);
+    }
   };
 
   const handleImageFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -498,15 +410,21 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
       }
     };
 
-    onAddSound(newSoundItem);
+    onAddSound(newSoundItem, audioFileBlob || undefined, imageFileBlob || undefined);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 md:p-6 font-mono-tech overflow-y-auto">
-      <div className={`max-w-2xl w-full rounded-2xl relative shadow-2xl transition-colors border p-5 md:p-6 my-auto max-h-[92vh] overflow-y-auto ${
-        isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0a121c] border-[#00e5ff]/40 text-[#dce4e5]'
-      }`}>
+    <div 
+      className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 md:p-6 font-mono-tech overflow-y-auto cursor-pointer"
+      onClick={() => { stopSynthAudio(); onClose(); }}
+    >
+      <div 
+        className={`max-w-2xl w-full rounded-2xl relative shadow-2xl transition-colors border p-5 md:p-6 my-auto max-h-[92vh] overflow-y-auto cursor-default ${
+          isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0a121c] border-[#00e5ff]/40 text-[#dce4e5]'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className={`flex justify-between items-start border-b pb-4 mb-4 ${isLight ? 'border-slate-200' : 'border-[#1a2635]'}`}>
           <div>
@@ -522,9 +440,11 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
           </div>
           <button 
             onClick={() => { stopSynthAudio(); onClose(); }} 
-            className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-[#1a2635] text-[#6b7a7d]'}`}
+            className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs cursor-pointer ${isLight ? 'hover:bg-slate-100 text-slate-600 bg-slate-100/50' : 'hover:bg-[#1a2635] text-[#94A3B8] bg-[#1a2635]/40 hover:text-white'}`}
+            title="Fermer la fenêtre (Échap ou clic extérieur)"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-outlined text-base">close</span>
+            <span className="hidden sm:inline text-[10px]">Échap</span>
           </button>
         </div>
 

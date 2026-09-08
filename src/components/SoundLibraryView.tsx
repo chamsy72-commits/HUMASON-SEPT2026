@@ -17,7 +17,7 @@ interface SoundLibraryViewProps {
   isAdminAuthenticated?: boolean;
   onDeleteSound?: (soundId: string) => void;
   onNavigateToAdmin?: (sound?: SoundItem) => void;
-  onUpdateSound?: (sound: SoundItem) => void;
+  onUpdateSound?: (sound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
 }
 
 export const SoundLibraryView: React.FC<SoundLibraryViewProps> = ({
@@ -188,6 +188,13 @@ export const SoundLibraryView: React.FC<SoundLibraryViewProps> = ({
               >
                 <span className="material-symbols-outlined text-sm">public</span>
                 Voir l'Atlas Scientifique
+              </button>
+              <button
+                onClick={onOpenDepositModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-[#D9532F] text-white hover:bg-[#BA4120] transition-all font-bold shadow-md hover:scale-105"
+              >
+                <span className="material-symbols-outlined text-sm">cloud_upload</span>
+                Insérer / Déposer un Son
               </button>
             </div>
           </div>
@@ -869,9 +876,9 @@ export const SoundLibraryView: React.FC<SoundLibraryViewProps> = ({
           sound={soundToEdit}
           settings={settings}
           onClose={() => setSoundToEdit(null)}
-          onSave={(updated) => {
+          onSave={(updated, audioBlob, imageBlob) => {
             if (onUpdateSound) {
-              onUpdateSound(updated);
+              onUpdateSound(updated, audioBlob, imageBlob);
             }
             setSoundToEdit(null);
           }}

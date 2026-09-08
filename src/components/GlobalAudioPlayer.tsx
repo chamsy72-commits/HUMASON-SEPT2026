@@ -21,6 +21,18 @@ export const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({
   const [showMetadataModal, setShowMetadataModal] = useState(false);
   const [progress, setProgress] = useState({ elapsed: 0, total: 262, ratio: 0 });
 
+  // Close Notice modal on Escape key press
+  useEffect(() => {
+    if (!showMetadataModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowMetadataModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showMetadataModal]);
+
   useEffect(() => {
     let animationFrame: number;
     const update = () => {
@@ -191,13 +203,20 @@ export const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({
         </div>
       </nav>
 
-      {/* Metadata Modal */}
+      {/* Metadata / Notice Modal */}
       {showMetadataModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#131822] border border-[#00A6D6] max-w-md w-full p-6 rounded-2xl relative font-mono-tech shadow-[0_0_30px_rgba(0,166,214,0.25)]">
-            <div className="flex justify-between items-start border-b border-[#222B3D] pb-3 mb-4">
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setShowMetadataModal(false)}
+        >
+          <div 
+            className="bg-[#131822] border border-[#00A6D6] max-w-md w-full p-6 rounded-2xl relative font-mono-tech shadow-[0_0_35px_rgba(0,166,214,0.3)] max-h-[85vh] overflow-y-auto cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start border-b border-[#222B3D] pb-3 mb-4 sticky top-0 bg-[#131822] z-10">
               <div>
-                <h3 className="text-lg text-[#00A6D6] font-bold font-display">
+                <span className="text-[10px] text-[#00A6D6] uppercase font-bold tracking-wider">Notice Ethnomusicologique</span>
+                <h3 className="text-lg text-[#F8FAFC] font-bold font-display">
                   {currentSound ? currentSound.title : 'HUMASON Audio Spec'}
                 </h3>
                 <p className="text-xs text-[#94A3B8]">
@@ -206,24 +225,26 @@ export const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({
               </div>
               <button
                 onClick={() => setShowMetadataModal(false)}
-                className="text-[#94A3B8] hover:text-[#00A6D6]"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-[#00A6D6] text-[#94A3B8] hover:text-[#0B0E14] flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="Fermer la notice (Échap ou clic extérieur)"
+                aria-label="Fermer la notice"
               >
-                <span className="material-symbols-outlined">close</span>
+                <span className="material-symbols-outlined text-base">close</span>
               </button>
             </div>
 
             <div className="space-y-3 text-xs text-[#F8FAFC] mb-6">
               <div className="flex justify-between border-b border-[#222B3D]/50 pb-1">
                 <span className="text-[#94A3B8]">FORMAT:</span>
-                <span className="text-[#00A6D6]">{currentSound ? currentSound.format : '3D Spatial'}</span>
+                <span className="text-[#00A6D6] font-bold">{currentSound ? currentSound.format : '3D Spatial'}</span>
               </div>
               <div className="flex justify-between border-b border-[#222B3D]/50 pb-1">
                 <span className="text-[#94A3B8]">COORDONNÉES:</span>
-                <span>{currentSound ? currentSound.coords : '36.8° N, 10.1° E'}</span>
+                <span className="font-mono">{currentSound ? currentSound.coords : '36.8° N, 10.1° E'}</span>
               </div>
               <div className="flex justify-between border-b border-[#222B3D]/50 pb-1">
                 <span className="text-[#94A3B8]">TAXONOMIE MODALE:</span>
-                <span className="text-[#C99738]">{currentSound?.organology?.modalTaxonomy || 'M7ayer 3RA9'}</span>
+                <span className="text-[#C99738] font-bold">{currentSound?.organology?.modalTaxonomy || 'M7ayer 3RA9'}</span>
               </div>
               <div className="flex justify-between border-b border-[#222B3D]/50 pb-1">
                 <span className="text-[#94A3B8]">CLASSIFICATION:</span>
@@ -235,15 +256,16 @@ export const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({
               </div>
             </div>
 
-            <p className="text-xs text-[#94A3B8] font-sans leading-relaxed mb-6">
+            <p className="text-xs text-[#94A3B8] font-sans leading-relaxed mb-6 bg-[#0B0E14]/60 p-3 rounded-xl border border-[#222B3D]">
               {currentSound?.description || 'Enregistrement sonore master haute fidélité capturé en 24-bit/96kHz non compressé pour la recherche, la diffusion et la préservation patrimoniale.'}
             </p>
 
             <button
               onClick={() => setShowMetadataModal(false)}
-              className="w-full bg-[#00A6D6] hover:bg-[#0093BE] text-[#0B0E14] font-bold py-2.5 rounded-xl text-xs uppercase"
+              className="w-full bg-[#00A6D6] hover:bg-[#0093BE] text-[#0B0E14] font-bold py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
             >
-              {t.close}
+              <span className="material-symbols-outlined text-base">check</span>
+              Fermer la notice (Échap)
             </button>
           </div>
         </div>

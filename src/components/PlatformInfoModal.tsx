@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { UserSettings } from '../types';
 
 interface PlatformInfoModalProps {
@@ -11,6 +11,14 @@ export const PlatformInfoModal: React.FC<PlatformInfoModalProps> = ({
   onClose
 }) => {
   const isLight = settings.theme === 'light';
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   return (
     <div 

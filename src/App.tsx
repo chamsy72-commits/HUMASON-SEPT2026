@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppTab, CartItem, EnterpriseTier, SoundItem, UserSettings } from './types';
 import { INITIAL_SOUNDS } from './data/mockData';
+import { loadAllSoundsFromDatabase, saveSoundToDatabase, deleteSoundFromDatabase } from './services/soundDatabase';
 import { SideNavBar } from './components/SideNavBar';
 import { TopHeader } from './components/TopHeader';
 import { GlobalAudioPlayer } from './components/GlobalAudioPlayer';
@@ -51,6 +52,27 @@ export default function App() {
     const initialList = loadInitialSounds();
     return initialList[0] || INITIAL_SOUNDS[0];
   });
+
+  // Rehydrate sounds from IndexedDB (with any stored binary audio/image blobs)
+  useEffect(() => {
+    let isMounted = true;
+    loadAllSoundsFromDatabase().then((dbSounds) => {
+      if (isMounted && dbSounds && dbSounds.length > 0) {
+        setSounds(dbSounds);
+        setSelectedSound(prev => {
+          if (!prev) return dbSounds[0];
+          const found = dbSounds.find(s => s.id === prev.id);
+          return found || dbSounds[0];
+        });
+      }
+    }).catch(err => {
+      console.warn('Could not load sounds from IndexedDB:', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartToast, setCartToast] = useState<{ message: string; visible: boolean } | null>(null);
@@ -111,6 +133,11 @@ export default function App() {
   };
 
   const handleDeleteSound = (soundId: string) => {
+    // Delete from IndexedDB store (blobs & metadata)
+    deleteSoundFromDatabase(soundId).catch(err => {
+      console.warn('Could not delete sound from IndexedDB:', err);
+    });
+
     setSounds(prev => {
       const updated = prev.filter(s => s.id !== soundId);
       try {
@@ -139,11 +166,7 @@ export default function App() {
   };
 
   const handleOpenDepositModal = () => {
-    if (isAdminAuthenticated) {
-      setIsDepositModalOpen(true);
-    } else {
-      setIsAdminLoginOpen(true);
-    }
+    setIsDepositModalOpen(true);
   };
 
   const handleOpenCheckoutForTier = (tier: EnterpriseTier) => {
@@ -158,37 +181,55 @@ export default function App() {
     setIsCheckoutOpen(true);
   };
 
-  const handleAddSound = (newSound: SoundItem) => {
-    setSounds(prev => {
-      const updated = [newSound, ...prev];
-      try {
-        const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
-        const customOnly = updated.filter(s => !initIds.has(s.id));
-        localStorage.setItem('humason_deposited_sounds', JSON.stringify(customOnly));
-      } catch (e) {
-        console.warn('Could not save to localStorage', e);
-      }
-      return updated;
-    });
+  const handleAddSound = (newSound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => {
+    // Optimistic state update
+    setSounds(prev => [newSound, ...prev.filter(s => s.id !== newSound.id)]);
     setSelectedSound(newSound);
+
+    // Persist audio blob, image blob and metadata to IndexedDB
+    saveSoundToDatabase(newSound, audioBlob, imageBlob)
+      .then(saved => {
+        setSounds(prev => prev.map(s => (s.id === saved.id ? saved : s)));
+        if (selectedSound?.id === saved.id) setSelectedSound(saved);
+      })
+      .catch(err => {
+        console.warn('Could not save sound to IndexedDB:', err);
+      });
+
+    // Also update localStorage cache for non-blob metadata
+    try {
+      const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
+      const customOnly = [newSound, ...sounds].filter(s => !initIds.has(s.id));
+      localStorage.setItem('humason_deposited_sounds', JSON.stringify(customOnly));
+    } catch (e) {
+      console.warn('Could not save to localStorage fallback', e);
+    }
   };
 
-  const handleUpdateSound = (updatedSound: SoundItem) => {
-    setSounds(prev => {
-      const updated = prev.map(s => (s.id === updatedSound.id ? updatedSound : s));
-      try {
-        const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
-        const customOnly = updated.filter(s => !initIds.has(s.id));
-        localStorage.setItem('humason_deposited_sounds', JSON.stringify(customOnly));
-        // Also persist modified original sound locators/metadata
-        localStorage.setItem('humason_modified_sounds', JSON.stringify(updated));
-      } catch (e) {
-        console.warn('Could not save updated sound to localStorage', e);
-      }
-      return updated;
-    });
+  const handleUpdateSound = (updatedSound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => {
+    // Optimistic update
+    setSounds(prev => prev.map(s => (s.id === updatedSound.id ? updatedSound : s)));
     if (selectedSound?.id === updatedSound.id) {
       setSelectedSound(updatedSound);
+    }
+
+    // Persist to IndexedDB
+    saveSoundToDatabase(updatedSound, audioBlob, imageBlob)
+      .then(saved => {
+        setSounds(prev => prev.map(s => (s.id === saved.id ? saved : s)));
+        if (selectedSound?.id === saved.id) setSelectedSound(saved);
+      })
+      .catch(err => {
+        console.warn('Could not update sound in IndexedDB:', err);
+      });
+
+    // Update localStorage fallback
+    try {
+      const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
+      const customOnly = sounds.map(s => (s.id === updatedSound.id ? updatedSound : s)).filter(s => !initIds.has(s.id));
+      localStorage.setItem('humason_deposited_sounds', JSON.stringify(customOnly));
+    } catch (e) {
+      console.warn('Could not save updated sound to localStorage fallback', e);
     }
   };
 
@@ -268,6 +309,7 @@ export default function App() {
             settings={settings}
             isAdminAuthenticated={isAdminAuthenticated}
             onDeleteSound={handleDeleteSound}
+            onUpdateSound={handleUpdateSound}
           />
         )}
 

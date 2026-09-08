@@ -2,11 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { SoundItem, UserSettings, AudioFormat, TrimLocators } from '../types';
 import { AudioWaveformCanvas } from './AudioWaveformCanvas';
 import { startSynthAudio, stopSynthAudio, getIsPlayingState } from '../services/audioSynth';
+import { optimizeImageFile } from '../services/soundDatabase';
+import { EditSoundModal } from './EditSoundModal';
+import { AddSoundModal } from './AddSoundModal';
 
 interface AdminViewProps {
   sounds: SoundItem[];
-  onAddSound: (sound: SoundItem) => void;
-  onUpdateSound: (sound: SoundItem) => void;
+  onAddSound: (sound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
+  onUpdateSound: (sound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
   onDeleteSound: (soundId: string) => void;
   settings: UserSettings;
   onNavigateToAtlas?: (sound?: SoundItem) => void;
@@ -83,6 +86,53 @@ export const AdminView: React.FC<AdminViewProps> = ({
   });
 
   const [deleteConfirmSound, setDeleteConfirmSound] = useState<SoundItem | null>(null);
+  const [adminImageFileBlob, setAdminImageFileBlob] = useState<Blob | null>(null);
+  const [adminAudioFileBlob, setAdminAudioFileBlob] = useState<Blob | null>(null);
+
+  // Rich Modals for total parity with Déposer un son
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [soundToEditModal, setSoundToEditModal] = useState<SoundItem | null>(null);
+  const adminImageInputRef = useRef<HTMLInputElement>(null);
+  const adminAudioInputRef = useRef<HTMLInputElement>(null);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isMetadataModalOpen) setIsMetadataModalOpen(false);
+        if (deleteConfirmSound) setDeleteConfirmSound(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMetadataModalOpen, deleteConfirmSound]);
+
+  const handleAdminImageFile = async (file: File) => {
+    if (!file) return;
+    try {
+      const res = await optimizeImageFile(file, 800, 800, 0.82);
+      setFormData(prev => ({ ...prev, image: res.dataUrl }));
+      setAdminImageFileBlob(res.blob);
+    } catch (e) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result) {
+          setFormData(prev => ({ ...prev, image: ev.target?.result as string }));
+        }
+      };
+      reader.readAsDataURL(file);
+      setAdminImageFileBlob(file);
+    }
+  };
+
+  const handleAdminAudioFile = (file: File) => {
+    if (!file) return;
+    setAdminAudioFileBlob(file);
+    const objectUrl = URL.createObjectURL(file);
+    setFormData(prev => ({ ...prev, audioUrl: objectUrl }));
+    stopSynthAudio();
+    startSynthAudio(formData.soundType || 'medina', 0.85, objectUrl);
+  };
 
   // Sync selected sound if removed
   useEffect(() => {
@@ -159,29 +209,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   // Open Metadata Modal
   const handleOpenCreateModal = () => {
-    setModalMode('create');
-    setFormData({
-      title: '',
-      location: 'Tozeur, Tunisie',
-      coords: '33.9197° N, 8.1335° E',
-      lat: 33.9197,
-      lng: 8.1335,
-      format: '3D Spatial',
-      duration: '04:15',
-      priceTND: 65,
-      image: 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=600&q=80',
-      description: 'Enregistrement audio master haute définition capturé au cœur des oasis du sud tunisien.',
-      soundType: 'desert',
-      customGenre: 'Sahara Field Recording',
-      specimenId: `HUM-${Math.floor(1000 + Math.random() * 9000)}`
-    });
-    setIsMetadataModalOpen(true);
+    setIsDepositModalOpen(true);
   };
 
   const handleOpenEditModal = (sound: SoundItem) => {
-    setModalMode('edit');
-    setFormData({ ...sound });
-    setIsMetadataModalOpen(true);
+    setSoundToEditModal(sound);
   };
 
   // Save metadata
@@ -206,15 +238,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
         customGenre: formData.customGenre || 'Musique Traditionnelle',
         specimenId: formData.specimenId || `HUM-${Math.floor(1000 + Math.random() * 9000)}`
       };
-      onAddSound(newSound);
+      onAddSound(newSound, adminAudioFileBlob || undefined, adminImageFileBlob || undefined);
       setSelectedSound(newSound);
     } else if (modalMode === 'edit' && formData.id) {
       const updated = formData as SoundItem;
-      onUpdateSound(updated);
+      onUpdateSound(updated, adminAudioFileBlob || undefined, adminImageFileBlob || undefined);
       if (selectedSound?.id === updated.id) {
         setSelectedSound(updated);
       }
     }
+    setAdminAudioFileBlob(null);
+    setAdminImageFileBlob(null);
     setIsMetadataModalOpen(false);
   };
 
@@ -706,14 +740,90 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[#94A3B8] font-bold mb-1">URL de l'image d'illustration</label>
-                <input
-                  type="text"
-                  value={formData.image || ''}
-                  onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                  className="w-full p-2.5 rounded-xl bg-[#0B0E14] border border-[#222B3D] text-white outline-none focus:border-[#00A6D6]"
-                />
+              {/* Image & Audio File / URL controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[#94A3B8] font-bold">Image de Pochette</label>
+                    <button
+                      type="button"
+                      onClick={() => adminImageInputRef.current?.click()}
+                      className="text-[11px] text-[#00A6D6] hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <span className="material-symbols-outlined text-xs">upload_file</span>
+                      Choisir fichier image
+                    </button>
+                    <input
+                      ref={adminImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) handleAdminImageFile(e.target.files[0]);
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {formData.image && (
+                      <div className="w-10 h-10 rounded-lg overflow-hidden border border-[#222B3D] shrink-0 bg-black/40">
+                        <img src={formData.image} alt="Thumbnail preview" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <input
+                      type="text"
+                      value={formData.image || ''}
+                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                      placeholder="https://... ou fichier chargé"
+                      className="w-full p-2.5 rounded-xl bg-[#0B0E14] border border-[#222B3D] text-white outline-none focus:border-[#00A6D6] text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[#94A3B8] font-bold">Fichier Audio Master</label>
+                    <button
+                      type="button"
+                      onClick={() => adminAudioInputRef.current?.click()}
+                      className="text-[11px] text-[#D9532F] hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <span className="material-symbols-outlined text-xs">audiotrack</span>
+                      Choisir fichier audio
+                    </button>
+                    <input
+                      ref={adminAudioInputRef}
+                      type="file"
+                      accept="audio/*,.wav,.mp3,.flac,.ogg,.amb"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) handleAdminAudioFile(e.target.files[0]);
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (formData.audioUrl) {
+                          startSynthAudio(formData.soundType || 'medina', 0.85, formData.audioUrl);
+                        } else {
+                          startSynthAudio(formData.soundType || 'medina', 0.85);
+                        }
+                      }}
+                      className="w-10 h-10 rounded-xl bg-[#00A6D6]/15 hover:bg-[#00A6D6] text-[#00A6D6] hover:text-[#0B0E14] border border-[#00A6D6]/40 flex items-center justify-center shrink-0 transition-colors"
+                      title="Écouter l'extrait"
+                    >
+                      <span className="material-symbols-outlined text-base">play_arrow</span>
+                    </button>
+                    <input
+                      type="text"
+                      value={formData.audioUrl || ''}
+                      onChange={(e) => setFormData({ ...formData, audioUrl: e.target.value })}
+                      placeholder="URL audio ou fichier chargé"
+                      className="w-full p-2.5 rounded-xl bg-[#0B0E14] border border-[#222B3D] text-white outline-none focus:border-[#00A6D6] text-xs"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -724,6 +834,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full p-2.5 rounded-xl bg-[#0B0E14] border border-[#222B3D] text-white outline-none focus:border-[#00A6D6]"
                 />
+              </div>
+
+              <div className="p-3 rounded-xl border border-[#00A6D6]/30 bg-[#00A6D6]/10 text-[#00A6D6] flex items-center gap-2.5 text-xs">
+                <span className="material-symbols-outlined text-base shrink-0">sync_saved_locally</span>
+                <span>
+                  <strong>Sauvegarde automatique :</strong> Le son, la pochette et toutes les métadonnées sont immédiatement enregistrés dans le catalogue et conservés automatiquement d'une session à l'autre.
+                </span>
               </div>
 
               <div className="pt-4 border-t border-[#222B3D] flex justify-end gap-3">
@@ -773,6 +890,38 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* RICH DEPOSIT MODAL */}
+      {isDepositModalOpen && (
+        <AddSoundModal
+          settings={settings}
+          onClose={() => setIsDepositModalOpen(false)}
+          onAddSound={(newSound, audioBlob, imageBlob) => {
+            onAddSound(newSound, audioBlob, imageBlob);
+            setSelectedSound(newSound);
+            setIsDepositModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* RICH EDIT SOUND MODAL */}
+      {soundToEditModal && (
+        <EditSoundModal
+          sound={soundToEditModal}
+          settings={settings}
+          onClose={() => setSoundToEditModal(null)}
+          onSave={(updated, audioBlob, imageBlob) => {
+            onUpdateSound(updated, audioBlob, imageBlob);
+            if (selectedSound?.id === updated.id) {
+              setSelectedSound(updated);
+            }
+            if (editingSound?.id === updated.id) {
+              setEditingSound(updated);
+            }
+            setSoundToEditModal(null);
+          }}
+        />
       )}
     </div>
   );

@@ -7,8 +7,8 @@ interface ProViewProps {
   settings: UserSettings;
   onOpenUpgradeModal: () => void;
   sounds?: SoundItem[];
-  onAddSound?: (sound: SoundItem) => void;
-  onUpdateSound?: (sound: SoundItem) => void;
+  onAddSound?: (sound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
+  onUpdateSound?: (sound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
   onDeleteSound?: (soundId: string) => void;
   onNavigateToAtlas?: (sound?: SoundItem) => void;
   isAdminAuthenticated?: boolean;

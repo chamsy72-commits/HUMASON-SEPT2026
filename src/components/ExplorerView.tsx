@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { SoundItem, UserSettings } from '../types';
 import { TRANSLATIONS } from '../data/mockData';
 import { togglePlayState } from '../services/audioSynth';
+import { EditSoundModal } from './EditSoundModal';
 
 interface ExplorerViewProps {
   sounds: SoundItem[];
@@ -15,6 +16,7 @@ interface ExplorerViewProps {
   settings: UserSettings;
   isAdminAuthenticated?: boolean;
   onDeleteSound?: (soundId: string) => void;
+  onUpdateSound?: (sound: SoundItem, audioBlob?: Blob, imageBlob?: Blob) => void;
 }
 
 // Popular locations for quick map navigation
@@ -37,10 +39,14 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   onNavigateToMarketplace,
   settings,
   isAdminAuthenticated,
-  onDeleteSound
+  onDeleteSound,
+  onUpdateSound
 }) => {
   const t = TRANSLATIONS[settings.language] || TRANSLATIONS.FR;
   const isLight = settings.theme === 'light';
+
+  // State for sound to edit modal
+  const [soundToEdit, setSoundToEdit] = useState<SoundItem | null>(null);
 
   // Map state
   const [mapStyle, setMapStyle] = useState<'streets' | 'satellite' | 'dark'>(isLight ? 'streets' : 'dark');
@@ -508,6 +514,19 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                 <span>PANIER</span>
               </button>
 
+              <button
+                onClick={() => setSoundToEdit(activeSound)}
+                className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-all ${
+                  isLight
+                    ? 'bg-cyan-50 hover:bg-cyan-100 text-[#008ba3] border-cyan-300'
+                    : 'bg-[#00A6D6]/15 hover:bg-[#00A6D6] text-[#00A6D6] hover:text-[#0B0E14] border-[#00A6D6]/40'
+                }`}
+                title="Modifier et traiter cet enregistrement sonore (GPS, Audio, Pochette, Métadonnées)"
+              >
+                <span className="material-symbols-outlined text-sm">edit</span>
+                <span>ÉDITER</span>
+              </button>
+
               {isAdminAuthenticated && (
                 <button
                   onClick={() => {
@@ -568,6 +587,24 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
           </span>
         )}
       </div>
+
+      {/* EDIT SOUND MODAL */}
+      {soundToEdit && (
+        <EditSoundModal
+          sound={soundToEdit}
+          settings={settings}
+          onClose={() => setSoundToEdit(null)}
+          onSave={(updated, audioBlob, imageBlob) => {
+            if (onUpdateSound) {
+              onUpdateSound(updated, audioBlob, imageBlob);
+            }
+            if (selectedSound?.id === updated.id) {
+              onSelectSound(updated);
+            }
+            setSoundToEdit(null);
+          }}
+        />
+      )}
     </div>
   );
 };
