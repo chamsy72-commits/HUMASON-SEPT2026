@@ -1,6 +1,7 @@
 import React from 'react';
 import { Currency, Language, UserSettings } from '../types';
 import { TRANSLATIONS } from '../data/mockData';
+import { HumasonLogo } from './HumasonLogo';
 
 interface TopHeaderProps {
   settings: UserSettings;
@@ -49,9 +50,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex items-center space-x-2 sm:space-x-4 md:space-x-6 min-w-0 shrink">
         <button
           onClick={onOpenPlatformInfo}
-          className="flex items-center gap-1.5 group text-left focus:outline-none shrink-0"
+          className="flex items-center gap-2 sm:gap-2.5 group text-left focus:outline-none shrink-0"
           title="Cliquez pour afficher les Constructeurs & la Présentation HUMASON"
         >
+          <HumasonLogo size="sm" />
           <h1 className="font-extrabold text-lg sm:text-2xl md:text-3xl text-[#00A6D6] tracking-tight font-display group-hover:opacity-90 transition-opacity">
             HUMASON
           </h1>

@@ -212,7 +212,7 @@ export const SoundLibraryView: React.FC<SoundLibraryViewProps> = ({
 
               <div className="flex items-center gap-3">
                 <div className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 group cursor-pointer" onClick={() => handleTogglePlay(featuredSound)}>
-                  <img src={featuredSound.image} alt={featuredSound.title} className="w-full h-full object-cover" />
+                  <img src={featuredSound.image} alt={featuredSound.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-[#00A6D6]/40 transition-colors">
                     <span className="material-symbols-outlined text-white text-2xl">
                       {playingId === featuredSound.id ? 'pause' : 'play_arrow'}
@@ -485,7 +485,7 @@ export const SoundLibraryView: React.FC<SoundLibraryViewProps> = ({
                       onClick={(e) => handleTogglePlay(sound, e)}
                       className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 group/art"
                     >
-                      <img src={sound.image} alt={sound.title} className="w-full h-full object-cover" />
+                      <img src={sound.image} alt={sound.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                       <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${
                         isSoundPlaying ? 'bg-[#fd6c00]/80 opacity-100' : 'bg-black/50 opacity-0 group-hover/art:opacity-100'
                       }`}>
@@ -694,7 +694,7 @@ export const SoundLibraryView: React.FC<SoundLibraryViewProps> = ({
                 <div>
                   {/* Card Cover Photo with Play Button Overlay */}
                   <div className="relative aspect-video w-full overflow-hidden bg-[#0B0E14] cursor-pointer" onClick={() => handleTogglePlay(sound)}>
-                    <img src={sound.image} alt={sound.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <img src={sound.image} alt={sound.title} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                     
                     {/* Format Badge */}

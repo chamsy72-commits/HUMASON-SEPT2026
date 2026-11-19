@@ -167,6 +167,28 @@ export async function getAudioBlob(soundId: string): Promise<Blob | null> {
 }
 
 /**
+ * Retrieve image blob from IndexedDB
+ */
+export async function getImageBlob(soundId: string): Promise<Blob | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(BLOBS_STORE, 'readonly');
+      const store = tx.objectStore(BLOBS_STORE);
+      const req = store.get(`image_${soundId}`);
+      req.onsuccess = () => {
+        resolve(req.result || null);
+      };
+      req.onerror = () => {
+        resolve(null);
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Save sound and optional audio/image blobs into IndexedDB and keep localStorage backup
  */
 export async function saveSoundToDatabase(
@@ -185,7 +207,7 @@ export async function saveSoundToDatabase(
       preparedSound.audioUrl = audioUrl;
     }
 
-    // 2. If image blob provided, save to blobs store
+    // 2. If image blob provided, save to blobs store and assign fresh Object URL
     if (imageBlob) {
       await new Promise<void>((resolve) => {
         const tx = db.transaction(BLOBS_STORE, 'readwrite');
@@ -194,6 +216,12 @@ export async function saveSoundToDatabase(
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       });
+
+      const oldImgUrl = activeObjectUrls.get(`img_${preparedSound.id}`);
+      if (oldImgUrl) URL.revokeObjectURL(oldImgUrl);
+      const freshImgUrl = URL.createObjectURL(imageBlob);
+      activeObjectUrls.set(`img_${preparedSound.id}`, freshImgUrl);
+      preparedSound.image = freshImgUrl;
     }
 
     // 3. Save SoundItem metadata to sounds store
@@ -216,7 +244,7 @@ export async function saveSoundToDatabase(
 }
 
 /**
- * Load all sounds from IndexedDB, rehydrating audio object URLs and fallback to mock data
+ * Load all sounds from IndexedDB, rehydrating audio & image object URLs and fallback to mock data
  */
 export async function loadAllSoundsFromDatabase(): Promise<SoundItem[]> {
   try {
@@ -234,15 +262,24 @@ export async function loadAllSoundsFromDatabase(): Promise<SoundItem[]> {
       req.onerror = () => resolve([]);
     });
 
-    // 3. For each stored sound, check if an audio blob exists and rehydrate audioUrl
+    // 3. For each stored sound, check if audio or image blobs exist and rehydrate Object URLs
     for (const sound of storedSounds) {
-      const blob = await getAudioBlob(sound.id);
-      if (blob) {
+      const audioBlob = await getAudioBlob(sound.id);
+      if (audioBlob) {
         const existingUrl = activeObjectUrls.get(sound.id);
         if (existingUrl) URL.revokeObjectURL(existingUrl);
-        const newUrl = URL.createObjectURL(blob);
+        const newUrl = URL.createObjectURL(audioBlob);
         activeObjectUrls.set(sound.id, newUrl);
         sound.audioUrl = newUrl;
+      }
+
+      const imgBlob = await getImageBlob(sound.id);
+      if (imgBlob) {
+        const existingImgUrl = activeObjectUrls.get(`img_${sound.id}`);
+        if (existingImgUrl) URL.revokeObjectURL(existingImgUrl);
+        const newImgUrl = URL.createObjectURL(imgBlob);
+        activeObjectUrls.set(`img_${sound.id}`, newImgUrl);
+        sound.image = newImgUrl;
       }
     }
 
@@ -252,12 +289,18 @@ export async function loadAllSoundsFromDatabase(): Promise<SoundItem[]> {
       const localModified = localStorage.getItem('humason_modified_sounds');
 
       if (localDeposited || localModified) {
-        const toMigrate: SoundItem[] = JSON.parse(localDeposited || localModified || '[]');
-        if (Array.isArray(toMigrate) && toMigrate.length > 0) {
-          for (const s of toMigrate) {
-            await saveSoundToDatabase(s);
+        try {
+          const depositedList: SoundItem[] = localDeposited ? JSON.parse(localDeposited) : [];
+          const modifiedList: SoundItem[] = localModified ? JSON.parse(localModified) : [];
+          const toMigrate = [...(Array.isArray(depositedList) ? depositedList : []), ...(Array.isArray(modifiedList) ? modifiedList : [])];
+          if (toMigrate.length > 0) {
+            for (const s of toMigrate) {
+              await saveSoundToDatabase(s);
+            }
+            return loadAllSoundsFromDatabase();
           }
-          return loadAllSoundsFromDatabase();
+        } catch (parseErr) {
+          console.warn('Migration parse error from localStorage:', parseErr);
         }
       }
     }
@@ -344,19 +387,31 @@ export function addDeletedSoundId(id: string): void {
 
 function syncLocalStorageFallback(sound: SoundItem) {
   try {
-    // Store a safe, lightweight copy in localStorage (without massive base64)
-    const raw = localStorage.getItem('humason_deposited_sounds');
-    const list: SoundItem[] = raw ? JSON.parse(raw) : [];
-    const filtered = list.filter((s) => s.id !== sound.id);
+    const isInitialCatalog = INITIAL_SOUNDS.some(s => s.id === sound.id);
 
+    // If image is a huge data URL, avoid truncating into invalid string; use fallback image if too large for localStorage
     const safeSound: SoundItem = {
       ...sound,
-      // If image is a huge data URL, keep only if small or use placeholder
-      image: sound.image && sound.image.length > 50000 ? sound.image.slice(0, 100) : sound.image
+      image: sound.image && sound.image.length > 50000 
+        ? (INITIAL_SOUNDS.find(s => s.id === sound.id)?.image || 'https://images.unsplash.com/photo-1548013146-72479768bada?w=800&q=80')
+        : sound.image
     };
 
-    filtered.unshift(safeSound);
-    localStorage.setItem('humason_deposited_sounds', JSON.stringify(filtered.slice(0, 20)));
+    if (isInitialCatalog) {
+      // Store in modified sounds store
+      const rawMod = localStorage.getItem('humason_modified_sounds');
+      const listMod: SoundItem[] = rawMod ? JSON.parse(rawMod) : [];
+      const filteredMod = listMod.filter((s) => s.id !== sound.id);
+      filteredMod.unshift(safeSound);
+      localStorage.setItem('humason_modified_sounds', JSON.stringify(filteredMod.slice(0, 30)));
+    } else {
+      // Store in deposited sounds store
+      const raw = localStorage.getItem('humason_deposited_sounds');
+      const list: SoundItem[] = raw ? JSON.parse(raw) : [];
+      const filtered = list.filter((s) => s.id !== sound.id);
+      filtered.unshift(safeSound);
+      localStorage.setItem('humason_deposited_sounds', JSON.stringify(filtered.slice(0, 30)));
+    }
   } catch {
     // ignore quota error
   }
@@ -365,13 +420,30 @@ function syncLocalStorageFallback(sound: SoundItem) {
 function getLocalStorageFallback(): SoundItem[] {
   try {
     const deletedIds = getDeletedSoundIds();
-    const raw = localStorage.getItem('humason_deposited_sounds');
+    const rawDep = localStorage.getItem('humason_deposited_sounds');
+    const rawMod = localStorage.getItem('humason_modified_sounds');
+
     let custom: SoundItem[] = [];
-    if (raw) {
-      custom = JSON.parse(raw);
+    if (rawDep) {
+      try {
+        const parsed = JSON.parse(rawDep);
+        if (Array.isArray(parsed)) custom = parsed;
+      } catch {}
     }
+
+    let modifiedMap = new Map<string, SoundItem>();
+    if (rawMod) {
+      try {
+        const parsedMod = JSON.parse(rawMod);
+        if (Array.isArray(parsedMod)) {
+          parsedMod.forEach(s => modifiedMap.set(s.id, s));
+        }
+      } catch {}
+    }
+
     const initIds = new Set(INITIAL_SOUNDS.map((s) => s.id));
-    const combined = [...custom.filter((s) => !initIds.has(s.id)), ...INITIAL_SOUNDS];
+    const mergedInitial = INITIAL_SOUNDS.map(s => modifiedMap.get(s.id) || s);
+    const combined = [...custom.filter((s) => !initIds.has(s.id)), ...mergedInitial];
     return combined.filter((s) => !deletedIds.has(s.id));
   } catch {
     return INITIAL_SOUNDS;

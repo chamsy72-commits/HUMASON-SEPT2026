@@ -120,25 +120,43 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
     if (step !== 1 || !mapContainerRef.current) return;
 
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
+      try {
+        mapInstanceRef.current.remove();
+      } catch {}
       mapInstanceRef.current = null;
     }
 
-    const initialLat = lat;
-    const initialLng = lng;
+    if ((mapContainerRef.current as any)._leaflet_id) {
+      delete (mapContainerRef.current as any)._leaflet_id;
+      mapContainerRef.current.innerHTML = '';
+    }
 
-    const map = L.map(mapContainerRef.current, {
-      center: [initialLat, initialLng],
-      zoom: 12,
-      zoomControl: true,
+    const initialLat = Number(lat) || 36.8065;
+    const initialLng = Number(lng) || 10.1815;
+
+    let map: L.Map;
+    try {
+      map = L.map(mapContainerRef.current, {
+        center: [initialLat, initialLng],
+        zoom: 12,
+        zoomControl: true,
+      });
+    } catch (e) {
+      console.warn('Map initialization retry:', e);
+      return;
+    }
+
+    const tileLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=fr&x={x}&y={y}&z={z}', {
+      attribution: '&copy; Google &copy; OpenStreetMap France',
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
     });
 
-    const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    tileLayer.once('tileerror', () => {
+      tileLayer.setUrl('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png');
+    });
 
-    L.tileLayer(tileUrl, {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 19
-    }).addTo(map);
+    tileLayer.addTo(map);
 
     // Custom Draggable Pin
     const customPinIcon = L.divIcon({
@@ -924,6 +942,7 @@ export const AddSoundModal: React.FC<AddSoundModalProps> = ({
                     <img
                       src={image}
                       alt="Thumbnail Preview"
+                      referrerPolicy="no-referrer"
                       className="w-12 h-12 object-cover rounded-lg border border-white/30 shadow-md shrink-0"
                     />
                   ) : (

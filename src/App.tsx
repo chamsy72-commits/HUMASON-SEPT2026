@@ -21,23 +21,38 @@ import { AdminView } from './components/AdminView';
 
 const loadInitialSounds = (): SoundItem[] => {
   try {
-    const deletedIds = new Set<string>(JSON.parse(localStorage.getItem('humason_deleted_sound_ids') || '[]'));
-    const savedModified = localStorage.getItem('humason_modified_sounds');
-    if (savedModified) {
-      const parsedModified: SoundItem[] = JSON.parse(savedModified);
-      if (Array.isArray(parsedModified) && parsedModified.length > 0) {
-        return parsedModified.filter(s => !deletedIds.has(s.id));
-      }
+    const deletedRaw = localStorage.getItem('humason_deleted_sound_ids');
+    let deletedIds = new Set<string>();
+    if (deletedRaw) {
+      try {
+        const parsed = JSON.parse(deletedRaw);
+        if (Array.isArray(parsed)) deletedIds = new Set(parsed);
+      } catch {}
     }
 
-    const saved = localStorage.getItem('humason_deposited_sounds');
-    let combined = [...INITIAL_SOUNDS];
-    if (saved) {
-      const parsed: SoundItem[] = JSON.parse(saved);
-      const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
-      const customOnly = parsed.filter(s => !initIds.has(s.id));
-      combined = [...customOnly, ...INITIAL_SOUNDS];
+    const modifiedMap = new Map<string, SoundItem>();
+    const savedModified = localStorage.getItem('humason_modified_sounds');
+    if (savedModified) {
+      try {
+        const parsed = JSON.parse(savedModified);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(s => modifiedMap.set(s.id, s));
+        }
+      } catch {}
     }
+
+    const savedDeposited = localStorage.getItem('humason_deposited_sounds');
+    let customSounds: SoundItem[] = [];
+    if (savedDeposited) {
+      try {
+        const parsed = JSON.parse(savedDeposited);
+        if (Array.isArray(parsed)) customSounds = parsed;
+      } catch {}
+    }
+
+    const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
+    const mergedInitial = INITIAL_SOUNDS.map(s => modifiedMap.get(s.id) || s);
+    const combined = [...customSounds.filter(s => !initIds.has(s.id)), ...mergedInitial];
     return combined.filter(s => !deletedIds.has(s.id));
   } catch (e) {
     console.warn('Could not load custom sounds from localStorage', e);
@@ -225,9 +240,18 @@ export default function App() {
 
     // Update localStorage fallback
     try {
-      const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
-      const customOnly = sounds.map(s => (s.id === updatedSound.id ? updatedSound : s)).filter(s => !initIds.has(s.id));
-      localStorage.setItem('humason_deposited_sounds', JSON.stringify(customOnly));
+      const isInitial = INITIAL_SOUNDS.some(s => s.id === updatedSound.id);
+      if (isInitial) {
+        const rawMod = localStorage.getItem('humason_modified_sounds');
+        const listMod: SoundItem[] = rawMod ? JSON.parse(rawMod) : [];
+        const filteredMod = listMod.filter(s => s.id !== updatedSound.id);
+        filteredMod.unshift(updatedSound);
+        localStorage.setItem('humason_modified_sounds', JSON.stringify(filteredMod.slice(0, 30)));
+      } else {
+        const initIds = new Set(INITIAL_SOUNDS.map(s => s.id));
+        const customOnly = sounds.map(s => (s.id === updatedSound.id ? updatedSound : s)).filter(s => !initIds.has(s.id));
+        localStorage.setItem('humason_deposited_sounds', JSON.stringify(customOnly.slice(0, 30)));
+      }
     } catch (e) {
       console.warn('Could not save updated sound to localStorage fallback', e);
     }

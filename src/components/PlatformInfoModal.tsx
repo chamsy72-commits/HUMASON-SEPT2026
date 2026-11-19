@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { UserSettings } from '../types';
+import { HumasonLogo } from './HumasonLogo';
 
 interface PlatformInfoModalProps {
   settings: UserSettings;
@@ -46,11 +47,9 @@ export const PlatformInfoModal: React.FC<PlatformInfoModalProps> = ({
 
         {/* Modal Header */}
         <div className="flex items-center space-x-3 mb-6 border-b pb-4 border-slate-200 dark:border-[#1a2635]">
-          <div className="w-12 h-12 rounded-xl bg-[#0099b8]/10 dark:bg-[#00e5ff]/10 border border-[#0099b8] dark:border-[#00e5ff] flex items-center justify-center text-[#0099b8] dark:text-[#00e5ff] font-black text-2xl font-display shadow-xs">
-            H
-          </div>
+          <HumasonLogo size="lg" />
           <div>
-            <h2 className="text-2xl font-black font-display text-[#0099b8] dark:text-[#00e5ff] tracking-tight">
+            <h2 className="text-2xl font-black font-display text-[#00A6D6] tracking-tight">
               HUMASON
             </h2>
             <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-[#8b9a9d]'}`}>

@@ -117,6 +117,7 @@ export const ExpressBuyModal: React.FC<ExpressBuyModalProps> = ({
               <img
                 src={sound.image}
                 alt={sound.title}
+                referrerPolicy="no-referrer"
                 className="w-14 h-14 object-cover rounded-lg border border-slate-200 dark:border-white/10 shrink-0"
               />
               <div className="min-w-0 flex-1">

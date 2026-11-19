@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { SoundItem, UserSettings } from '../types';
 import { TRANSLATIONS } from '../data/mockData';
 import { togglePlayState } from '../services/audioSynth';
+import { parseGpsInput } from '../services/geoService';
 import { EditSoundModal } from './EditSoundModal';
 
 interface ExplorerViewProps {
@@ -29,6 +30,15 @@ const MAP_LOCATIONS = [
   { name: 'Marrakech', lat: 31.6295, lng: -7.9811 },
   { name: 'Tripoli', lat: 32.8872, lng: 13.1913 }
 ];
+
+function escapeHtml(str: string): string {
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 export const ExplorerView: React.FC<ExplorerViewProps> = ({
   sounds,
@@ -76,33 +86,89 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
     return `${priceTND.toFixed(2)} TND`;
   };
 
-  // Get tile URL for map style
-  const getTileUrl = (style: 'streets' | 'satellite' | 'dark') => {
+  // Tile layer generator ensuring French/English labels and resilient Satellite imagery
+  const createTileLayerForStyle = (style: 'streets' | 'satellite' | 'dark'): L.TileLayer => {
     if (style === 'satellite') {
-      return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-    }
-    if (style === 'streets') {
-      return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-    }
-    return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  };
-
-  // Initialize Leaflet Map
-  useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    if (!mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, {
-        center: [34.5, 8.5], // Centered on North Africa
-        zoom: 6,
-        zoomControl: false,
+      // High-resolution Satellite Hybrid with French place names
+      const satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&hl=fr&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google &copy; Esri &copy; Maxar',
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
       });
 
-      const tileLayer = L.tileLayer(getTileUrl(mapStyle), {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO & Esri',
-        maxZoom: 19,
-      }).addTo(map);
+      // Satellite-to-Satellite fallback: If Google satellite tiles are delayed, switch to Esri World Imagery
+      satelliteLayer.once('tileerror', () => {
+        console.info('Switching to Esri World Imagery Satellite fallback');
+        satelliteLayer.setUrl('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+      });
 
+      return satelliteLayer;
+    }
+
+    if (style === 'streets') {
+      // Plan view with strictly French/English labels (Google Plan + OpenStreetMap France)
+      const streetsLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=fr&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google &copy; OpenStreetMap France contributors',
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+      });
+
+      // Fallback to OpenStreetMap France (100% French/Latin alphabet labels)
+      streetsLayer.once('tileerror', () => {
+        console.info('Switching to OpenStreetMap France tile fallback');
+        streetsLayer.setUrl('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png');
+      });
+
+      return streetsLayer;
+    }
+
+    // High-contrast Dark theme for sonic DAW aesthetics
+    const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      maxZoom: 19,
+      subdomains: 'abcd',
+    });
+
+    darkLayer.once('tileerror', () => {
+      console.info('Switching dark layer to OpenStreetMap France fallback');
+      darkLayer.setUrl('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png');
+    });
+
+    return darkLayer;
+  };
+
+  // Initialize Leaflet Map with bulletproof container lifecycle & ResizeObserver
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    // 1. Destroy any existing map instance to avoid "Map container is already initialized" error
+    if (mapInstanceRef.current) {
+      try {
+        mapInstanceRef.current.remove();
+      } catch (err) {
+        console.warn('Map cleanup error:', err);
+      }
+      mapInstanceRef.current = null;
+    }
+
+    // 2. Clear any residual Leaflet ID and DOM children
+    if ((container as any)._leaflet_id) {
+      delete (container as any)._leaflet_id;
+      container.innerHTML = '';
+    }
+
+    let map: L.Map | null = null;
+    try {
+      map = L.map(container, {
+        center: [34.5, 9.5], // Centered on North Africa / Maghreb
+        zoom: 6,
+        zoomControl: false,
+        attributionControl: true,
+      });
+
+      const tileLayer = createTileLayerForStyle(mapStyle);
+      tileLayer.addTo(map);
       tileLayerRef.current = tileLayer;
 
       // Track cursor position
@@ -111,14 +177,45 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
       });
 
       mapInstanceRef.current = map;
+    } catch (e) {
+      console.error('Failed to initialize Leaflet map container:', e);
     }
 
-    // Force map resize check
-    setTimeout(() => {
+    // Force map size recalculation via ResizeObserver and progressive intervals
+    const triggerInvalidate = () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();
       }
-    }, 150);
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      triggerInvalidate();
+    });
+    resizeObserver.observe(container);
+
+    const t1 = setTimeout(triggerInvalidate, 50);
+    const t2 = setTimeout(triggerInvalidate, 200);
+    const t3 = setTimeout(triggerInvalidate, 500);
+    const t4 = setTimeout(triggerInvalidate, 1200);
+
+    return () => {
+      resizeObserver.disconnect();
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch (e) {
+          console.warn('Map unmount error:', e);
+        }
+        mapInstanceRef.current = null;
+      }
+      if (container) {
+        delete (container as any)._leaflet_id;
+      }
+    };
   }, []);
 
   // Synchronize Map with Day (light) and Night (dark) mode
@@ -134,15 +231,13 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
       mapInstanceRef.current.removeLayer(tileLayerRef.current);
     }
 
-    const newTileLayer = L.tileLayer(getTileUrl(mapStyle), {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO & Esri',
-      maxZoom: 19,
-    }).addTo(mapInstanceRef.current);
-
+    const newTileLayer = createTileLayerForStyle(mapStyle);
+    newTileLayer.addTo(mapInstanceRef.current);
     tileLayerRef.current = newTileLayer;
+    mapInstanceRef.current.invalidateSize();
   }, [mapStyle]);
 
-  // Handle Sound Markers render & update
+  // Handle Sound Markers render & update with coordinates sanity checks
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -152,11 +247,20 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
     markersRef.current = {};
 
     sounds.forEach((s) => {
+      const lat = typeof s.lat === 'number' ? s.lat : parseFloat(String(s.lat));
+      const lng = typeof s.lng === 'number' ? s.lng : parseFloat(String(s.lng));
+
+      // Guard against invalid coordinates that would crash Leaflet
+      if (isNaN(lat) || isNaN(lng) || !isFinite(lat) || !isFinite(lng)) {
+        return;
+      }
+
       const isSelected = selectedSound?.id === s.id;
 
-      let colorHex = '#00e5ff';
+      let colorHex = '#00A6D6';
       if (s.format === 'Stereo') colorHex = '#4edea3';
-      if (s.format === 'Ambisonic') colorHex = '#fd6c00';
+      if (s.format === 'Ambisonic') colorHex = '#D9532F';
+      if (s.format === '3D Spatial') colorHex = '#00C8FF';
 
       const customIcon = L.divIcon({
         className: 'custom-sound-marker',
@@ -167,7 +271,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
               <span style="font-size: 10px; color: #020912; font-weight: 800;">♪</span>
             </div>
             <div style="margin-top: 4px; background: rgba(2, 9, 18, 0.85); color: #ffffff; padding: 2px 6px; border-radius: 4px; border: 1px solid ${colorHex}; font-size: 10px; white-space: nowrap; font-family: monospace; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.5);">
-              ${s.title}
+              ${escapeHtml(s.title)}
             </div>
           </div>
         `,
@@ -175,11 +279,11 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
         iconAnchor: [20, 25]
       });
 
-      const marker = L.marker([s.lat, s.lng], { icon: customIcon }).addTo(map);
+      const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
 
       marker.on('click', () => {
         onSelectSound(s);
-        map.flyTo([s.lat, s.lng], Math.max(map.getZoom(), 11), { duration: 1 });
+        map.flyTo([lat, lng], Math.max(map.getZoom(), 11), { duration: 1 });
       });
 
       markersRef.current[s.id] = marker;
@@ -190,6 +294,13 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   const handleSearchLocation = (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchLocation || !mapInstanceRef.current) return;
+
+    // Check if query is raw GPS coordinates (e.g. "36.8, 10.2" or "36.8065 N 10.1815 E")
+    const parsedCoords = parseGpsInput(searchLocation);
+    if (parsedCoords) {
+      mapInstanceRef.current.flyTo([parsedCoords.lat, parsedCoords.lng], 13, { duration: 1.2 });
+      return;
+    }
 
     const matchedSound = sounds.find(s => 
       s.location.toLowerCase().includes(searchLocation.toLowerCase()) ||
@@ -225,11 +336,21 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   const activeSound = selectedSound || sounds[0];
 
   return (
-    <div className={`relative w-full h-[calc(100vh-4rem)] sm:h-[calc(100vh-5rem)] ml-14 sm:ml-20 md:ml-24 w-[calc(100%-3.5rem)] sm:w-[calc(100%-5rem)] md:w-[calc(100%-6rem)] max-w-full overflow-hidden transition-colors ${
-      isLight ? 'bg-slate-100' : 'bg-[#020912]'
-    }`}>
+    <div 
+      className={`relative w-full ml-14 sm:ml-20 md:ml-24 w-[calc(100%-3.5rem)] sm:w-[calc(100%-5rem)] md:w-[calc(100%-6rem)] max-w-full overflow-hidden transition-colors ${
+        isLight ? 'bg-slate-100' : 'bg-[#020912]'
+      }`}
+      style={{
+        height: 'calc(100vh - 4rem)',
+        minHeight: '560px'
+      }}
+    >
       {/* Full-bleed Leaflet Map */}
-      <div ref={mapContainerRef} className="absolute inset-0 z-0" />
+      <div 
+        ref={mapContainerRef} 
+        className="absolute inset-0 z-0 w-full h-full" 
+        style={{ width: '100%', height: '100%', minHeight: '100%' }}
+      />
 
       {/* TOP SCIENTIFIC ATLAS CONTEXT BANNER */}
       <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
@@ -322,10 +443,10 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   ? isLight ? 'bg-[#0099b8] text-white' : 'bg-[#00e5ff] text-[#001f24]'
                   : isLight ? 'text-slate-600 hover:bg-slate-100' : 'text-[#8b9a9d] hover:text-white'
               }`}
-              title="Vue Plan Google Maps"
+              title="Vue Plan en Français ou Anglais"
             >
               <span className="material-symbols-outlined text-xs">map</span>
-              Plan
+              Plan (FR/EN)
             </button>
 
             <button
@@ -335,7 +456,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   ? isLight ? 'bg-[#0099b8] text-white' : 'bg-[#00e5ff] text-[#001f24]'
                   : isLight ? 'text-slate-600 hover:bg-slate-100' : 'text-[#8b9a9d] hover:text-white'
               }`}
-              title="Vue Satellite Haute Résolution"
+              title="Vue Satellite Haute Résolution Hybride (Google & Esri)"
             >
               <span className="material-symbols-outlined text-xs">satellite_alt</span>
               Satellite
@@ -394,13 +515,14 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
         <button
           onClick={() => {
             if (mapInstanceRef.current) {
-              mapInstanceRef.current.flyTo([34.5, 8.5], 6);
+              mapInstanceRef.current.invalidateSize();
+              mapInstanceRef.current.flyTo([34.5, 9.5], 6);
             }
           }}
           className={`p-2.5 rounded-lg border flex justify-center shadow-xl backdrop-blur-md transition-colors ${
             isLight ? 'bg-white/95 border-slate-300 text-slate-700 hover:bg-slate-100' : 'bg-[#0c131d]/95 border-[#1a2635] text-[#bac9cc] hover:text-[#00e5ff]'
           }`}
-          title="Réinitialiser la vue Carte"
+          title="Recentrer et actualiser la vue Carte"
         >
           <span className="material-symbols-outlined text-sm">filter_center_focus</span>
         </button>
@@ -418,6 +540,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
             <img 
               src={activeSound.image} 
               alt={activeSound.title} 
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />

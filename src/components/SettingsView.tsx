@@ -54,6 +54,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <img
               src={MOCK_USER.avatar}
               alt={MOCK_USER.name}
+              referrerPolicy="no-referrer"
               className="w-16 h-16 rounded-full border-2 border-[#0099b8] dark:border-[#00e5ff]"
             />
             <div>

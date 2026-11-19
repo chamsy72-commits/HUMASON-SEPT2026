@@ -63,8 +63,27 @@ export const AudioWaveformCanvas: React.FC<AudioWaveformCanvasProps> = ({
 
   const [hoverRatio, setHoverRatio] = useState<number | null>(null);
   const [hoverTimeStr, setHoverTimeStr] = useState<string>('');
+  const [measuredWidth, setMeasuredWidth] = useState<number>(0);
 
   const isLight = theme === 'light';
+
+  // Observe container dimensions for responsive canvas sizing
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0) {
+            setMeasuredWidth(Math.floor(entry.contentRect.width));
+          }
+        }
+      });
+      ro.observe(container);
+      return () => ro.disconnect();
+    }
+  }, []);
 
   // Generate deterministic base profile for this sound
   const baseProfile = useMemo(() => {
@@ -271,7 +290,8 @@ export const AudioWaveformCanvas: React.FC<AudioWaveformCanvasProps> = ({
     barGap,
     isLight,
     leftLocatorRatio,
-    rightLocatorRatio
+    rightLocatorRatio,
+    measuredWidth
   ]);
 
   // Handle seeking interaction

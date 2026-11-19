@@ -766,7 +766,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   <div className="flex items-center gap-2">
                     {formData.image && (
                       <div className="w-10 h-10 rounded-lg overflow-hidden border border-[#222B3D] shrink-0 bg-black/40">
-                        <img src={formData.image} alt="Thumbnail preview" className="w-full h-full object-cover" />
+                        <img src={formData.image} alt="Thumbnail preview" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                       </div>
                     )}
                     <input

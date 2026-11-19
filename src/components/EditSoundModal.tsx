@@ -25,13 +25,18 @@ function parseDurationToSeconds(duration: string | number): number {
   if (typeof duration === 'number') return Math.max(1, duration);
   if (!duration) return 240;
   const parts = duration.split(':').map(Number);
-  if (parts.length === 2) return Math.max(1, parts[0] * 60 + parts[1]);
-  if (parts.length === 3) return Math.max(1, parts[0] * 3600 + parts[1] * 60 + parts[2]);
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return Math.max(1, parts[0] * 60 + parts[1]);
+  }
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return Math.max(1, parts[0] * 3600 + parts[1] * 60 + parts[2]);
+  }
   const parsed = parseFloat(duration);
   return isNaN(parsed) ? 240 : Math.max(1, parsed);
 }
 
 function formatSecondsToTime(totalSecs: number): string {
+  if (isNaN(totalSecs) || totalSecs < 0 || !isFinite(totalSecs)) return '00:00.0';
   const m = Math.floor(totalSecs / 60);
   const s = Math.floor(totalSecs % 60);
   const ms = Math.floor((totalSecs % 1) * 10);
@@ -39,9 +44,22 @@ function formatSecondsToTime(totalSecs: number): string {
 }
 
 function formatSecondsToMinutes(totalSecs: number): string {
+  if (isNaN(totalSecs) || totalSecs < 0 || !isFinite(totalSecs)) return '00:00';
   const m = Math.floor(totalSecs / 60);
   const s = Math.floor(totalSecs % 60);
   return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+function isSafeMediaUrl(url: string): boolean {
+  if (!url) return true;
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('data:audio/')
+  );
 }
 
 export const EditSoundModal: React.FC<EditSoundModalProps> = ({
@@ -122,6 +140,19 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const tempObjectUrlsRef = useRef<string[]>([]);
+
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      tempObjectUrlsRef.current.forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      });
+      tempObjectUrlsRef.current = [];
+    };
+  }, []);
 
   // Close modal on Escape key
   useEffect(() => {
@@ -173,25 +204,43 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
     if (activeTab !== 'map' || !mapContainerRef.current) return;
 
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
+      try {
+        mapInstanceRef.current.remove();
+      } catch {}
       mapInstanceRef.current = null;
     }
 
-    const initialLat = lat || 36.8065;
-    const initialLng = lng || 10.1815;
+    if ((mapContainerRef.current as any)._leaflet_id) {
+      delete (mapContainerRef.current as any)._leaflet_id;
+      mapContainerRef.current.innerHTML = '';
+    }
 
-    const map = L.map(mapContainerRef.current, {
-      center: [initialLat, initialLng],
-      zoom: 12,
-      zoomControl: true,
+    const initialLat = Number(lat) || 36.8065;
+    const initialLng = Number(lng) || 10.1815;
+
+    let map: L.Map;
+    try {
+      map = L.map(mapContainerRef.current, {
+        center: [initialLat, initialLng],
+        zoom: 12,
+        zoomControl: true,
+      });
+    } catch (e) {
+      console.warn('Map initialization retry:', e);
+      return;
+    }
+
+    const tileLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=fr&x={x}&y={y}&z={z}', {
+      attribution: '&copy; Google &copy; OpenStreetMap France',
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
     });
 
-    const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    tileLayer.once('tileerror', () => {
+      tileLayer.setUrl('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png');
+    });
 
-    L.tileLayer(tileUrl, {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 19
-    }).addTo(map);
+    tileLayer.addTo(map);
 
     // Custom Draggable Pin
     const customPinIcon = L.divIcon({
@@ -240,7 +289,7 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
         mapInstanceRef.current = null;
       }
     };
-  }, [activeTab, isLight, handleUpdateCoordinates, lat, lng]);
+  }, [activeTab, isLight, handleUpdateCoordinates]);
 
   // Handle preset location pick
   const handleSelectPreset = (preset: typeof QUICK_LOCATIONS[0]) => {
@@ -332,6 +381,7 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
     setAudioFileBlob(file);
 
     const objectUrl = URL.createObjectURL(file);
+    tempObjectUrlsRef.current.push(objectUrl);
     setAudioUrl(objectUrl);
     stopSynthAudio();
     startSynthAudio(soundType, previewVolume, objectUrl);
@@ -418,21 +468,26 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
     const startRatio = leftLocatorSec / totalLengthSec;
     const endRatio = rightLocatorSec / totalLengthSec;
 
+    const safeAudioUrl = isSafeMediaUrl(audioUrl) ? audioUrl.trim() : sound.audioUrl;
+    const safeImage = isSafeMediaUrl(image) 
+      ? (image || sound.image || ACOUSTIC_GENRES[0].defaultImage) 
+      : (sound.image || ACOUSTIC_GENRES[0].defaultImage);
+
     const updatedSoundItem: SoundItem = {
       ...sound,
       title: title.trim(),
       location: location.trim(),
       coords: coords.trim(),
-      lat,
-      lng,
+      lat: Math.max(-90, Math.min(90, lat)),
+      lng: Math.max(-180, Math.min(180, lng)),
       format,
       duration: newDurationStr || sound.duration,
       priceTND: Math.max(5, Number(priceTND) || sound.priceTND || 25),
-      image: image || sound.image || ACOUSTIC_GENRES[0].defaultImage,
+      image: safeImage,
       description: description.trim() || sound.description,
       soundType,
       customGenre: soundType === 'custom' ? (customGenre.trim() || undefined) : (customGenre.trim() || undefined),
-      audioUrl: audioUrl.trim() || sound.audioUrl,
+      audioUrl: safeAudioUrl || sound.audioUrl,
       specimenId: specimenId.trim() || sound.specimenId || `#${Math.floor(1000 + Math.random() * 9000)}-S`,
       trimLocators: {
         startSec: parseFloat(leftLocatorSec.toFixed(2)),
@@ -1147,7 +1202,7 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
                 <div className="flex flex-col items-center justify-center gap-2">
                   {image ? (
                     <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-lg border border-[#00A6D6]/40 relative group">
-                      <img src={image} alt="Vignette" className="w-full h-full object-cover" />
+                      <img src={image} alt="Vignette" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] transition-opacity font-bold">
                         Remplacer
                       </div>
@@ -1200,7 +1255,7 @@ export const EditSoundModal: React.FC<EditSoundModalProps> = ({
                         : 'border-[#222B3D] hover:border-white/40'
                     }`}
                   >
-                    <img src={item.defaultImage} alt={item.label} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    <img src={item.defaultImage} alt={item.label} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-1">
                       <span className="text-[9px] text-white font-bold truncate">{item.label.split(' ')[0]}</span>
                     </div>

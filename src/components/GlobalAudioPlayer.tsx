@@ -100,6 +100,7 @@ export const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({
               <img
                 src={currentSound.image}
                 alt={currentSound.title}
+                referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
             ) : (

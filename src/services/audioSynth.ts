@@ -12,13 +12,33 @@ let playStartTime = 0;
 let playbackDuration = 262; // in seconds
 let activeSoundType: string = 'medina';
 
+// Session token and timer tracking to avoid overlapping background synth loops (cacophony flaw)
+let currentSessionToken = 0;
+let activeTimeoutIds: number[] = [];
+
+function registerSynthTimeout(fn: () => void, delay: number, token: number): number {
+  const id = window.setTimeout(() => {
+    activeTimeoutIds = activeTimeoutIds.filter(t => t !== id);
+    if (isPlaying && currentSessionToken === token) {
+      fn();
+    }
+  }, delay);
+  activeTimeoutIds.push(id);
+  return id;
+}
+
+function clearAllSynthTimeouts() {
+  activeTimeoutIds.forEach(id => clearTimeout(id));
+  activeTimeoutIds = [];
+}
+
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
     const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     audioCtx = new AudioContextClass();
   }
   if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    audioCtx.resume().catch(() => {});
   }
   return audioCtx;
 }
@@ -26,6 +46,9 @@ function getAudioContext(): AudioContext {
 export function startSynthAudio(type: string = 'medina', volume: number = 0.8, audioUrl?: string) {
   stopSynthAudio();
   const ctx = getAudioContext();
+
+  currentSessionToken++;
+  const sessionToken = currentSessionToken;
 
   gainNode = ctx.createGain();
   gainNode.gain.setValueAtTime(volume, ctx.currentTime);
@@ -55,7 +78,7 @@ export function startSynthAudio(type: string = 'medina', volume: number = 0.8, a
       currentAudioElement = audio;
 
       audio.addEventListener('loadedmetadata', () => {
-        if (audio.duration && !isNaN(audio.duration)) {
+        if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
           playbackDuration = Math.floor(audio.duration);
         }
       });
@@ -66,8 +89,9 @@ export function startSynthAudio(type: string = 'medina', volume: number = 0.8, a
 
       audio.play().catch((err) => {
         console.warn('HTML Audio playback fallback to synthesis:', err);
-        // Fallback to generative acoustic synthesis if blob/URL cannot play
-        dispatchProceduralSynthesis(type, ctx, gainNode!);
+        if (isPlaying && currentSessionToken === sessionToken) {
+          dispatchProceduralSynthesis(type, ctx, gainNode!, sessionToken);
+        }
       });
       return;
     } catch (e) {
@@ -76,49 +100,62 @@ export function startSynthAudio(type: string = 'medina', volume: number = 0.8, a
   }
 
   // Generative Procedural Synthesis based on Sound Type / Acoustic Genre
-  dispatchProceduralSynthesis(type, ctx, gainNode);
+  dispatchProceduralSynthesis(type, ctx, gainNode, sessionToken);
 }
 
-function dispatchProceduralSynthesis(type: string, ctx: AudioContext, destination: GainNode) {
+function dispatchProceduralSynthesis(type: string, ctx: AudioContext, destination: GainNode, token: number) {
   const normType = (type || 'medina').toLowerCase();
 
   if (normType.includes('oud') || normType.includes('m7ayer') || normType.includes('luth')) {
-    createOudMelody(ctx, destination);
+    createOudMelody(ctx, destination, token);
   } else if (normType.includes('nay') || normType.includes('flute') || normType.includes('soufi')) {
-    createNayFluteMelody(ctx, destination);
+    createNayFluteMelody(ctx, destination, token);
   } else if (normType.includes('mezwed') || normType.includes('cornemuse') || normType.includes('bagpipe')) {
-    createMezwedDroneAndMelody(ctx, destination);
+    createMezwedDroneAndMelody(ctx, destination, token);
   } else if (normType.includes('darbuka') || normType.includes('derbouka') || normType.includes('percussion')) {
-    createDarbukaRhythm(ctx, destination);
+    createDarbukaRhythm(ctx, destination, token);
   } else if (normType.includes('bendir') || normType.includes('trance')) {
-    createBendirRhythm(ctx, destination);
+    createBendirRhythm(ctx, destination, token);
   } else if (normType.includes('malouf') || normType.includes('andalous')) {
-    createMaloufOrchestra(ctx, destination);
+    createMaloufOrchestra(ctx, destination, token);
   } else if (normType.includes('gnawa') || normType.includes('guembri') || normType.includes('stambali')) {
-    createGnawaGuembriAndQraqeb(ctx, destination);
+    createGnawaGuembriAndQraqeb(ctx, destination, token);
   } else if (normType.includes('desert') || normType.includes('sahara') || normType.includes('dunes') || normType.includes('vent')) {
     createAmbientWind(ctx, destination);
   } else if (normType.includes('coastal') || normType.includes('mer') || normType.includes('vague') || normType.includes('ocean')) {
     createOceanWaves(ctx, destination);
   } else if (normType.includes('oasis') || normType.includes('eau') || normType.includes('water') || normType.includes('source')) {
-    createOasisSpring(ctx, destination);
+    createOasisSpring(ctx, destination, token);
   } else if (normType.includes('biophony') || normType.includes('oiseau') || normType.includes('bird') || normType.includes('ichkeul')) {
-    createBirdBiophony(ctx, destination);
+    createBirdBiophony(ctx, destination, token);
   } else {
     // Medina & ambient heritage default
-    createMedinaAtmosphere(ctx, destination);
+    createMedinaAtmosphere(ctx, destination, token);
   }
 }
 
 export function stopSynthAudio() {
+  currentSessionToken++;
+  clearAllSynthTimeouts();
+
   if (currentAudioElement) {
     try {
       currentAudioElement.pause();
       currentAudioElement.currentTime = 0;
+      currentAudioElement.src = '';
     } catch {
       // Ignore audio element errors
     }
     currentAudioElement = null;
+  }
+
+  if (currentMediaSourceNode) {
+    try {
+      currentMediaSourceNode.disconnect();
+    } catch {
+      // Ignore
+    }
+    currentMediaSourceNode = null;
   }
 
   currentOscillators.forEach(node => {
@@ -238,12 +275,12 @@ export function seekPlayback(ratio: number) {
 // ----------------------------------------------------
 
 // 1. Oud (Arab Lute) microtonal pluck
-function createOudMelody(ctx: AudioContext, destination: GainNode) {
+function createOudMelody(ctx: AudioContext, destination: GainNode, token: number) {
   const notes = [220, 246.94, 277.18, 293.66, 329.63, 349.23, 392, 440]; // Bayati / Rast mode
   let noteIndex = 0;
 
   const playPluck = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const osc = ctx.createOscillator();
     const pluckGain = ctx.createGain();
 
@@ -268,8 +305,8 @@ function createOudMelody(ctx: AudioContext, destination: GainNode) {
     currentOscillators.push(osc);
     noteIndex = (noteIndex + 1) % notes.length;
 
-    if (isPlaying) {
-      setTimeout(playPluck, 450 + Math.random() * 350);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playPluck, 450 + Math.random() * 350, token);
     }
   };
 
@@ -277,7 +314,7 @@ function createOudMelody(ctx: AudioContext, destination: GainNode) {
 }
 
 // 2. Nay (Sufi Bamboo Flute) breathy tone
-function createNayFluteMelody(ctx: AudioContext, destination: GainNode) {
+function createNayFluteMelody(ctx: AudioContext, destination: GainNode, token: number) {
   const nayNotes = [293.66, 329.63, 349.23, 370.0, 392.0, 440.0, 493.88, 523.25, 587.33]; // Saba / Hijaz
   let noteIndex = 0;
 
@@ -307,7 +344,7 @@ function createNayFluteMelody(ctx: AudioContext, destination: GainNode) {
   currentOscillators.push(breathNoise, breathFilter as unknown as OscillatorNode);
 
   const playFluteTone = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const osc = ctx.createOscillator();
     const toneGain = ctx.createGain();
 
@@ -328,8 +365,8 @@ function createNayFluteMelody(ctx: AudioContext, destination: GainNode) {
     currentOscillators.push(osc);
 
     noteIndex = (noteIndex + 1) % nayNotes.length;
-    if (isPlaying) {
-      setTimeout(playFluteTone, 1100 + Math.random() * 500);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playFluteTone, 1100 + Math.random() * 500, token);
     }
   };
 
@@ -337,7 +374,7 @@ function createNayFluteMelody(ctx: AudioContext, destination: GainNode) {
 }
 
 // 3. Mezwed (Tunisian Bagpipe & Double Reed Drone)
-function createMezwedDroneAndMelody(ctx: AudioContext, destination: GainNode) {
+function createMezwedDroneAndMelody(ctx: AudioContext, destination: GainNode, token: number) {
   // Continuous bagpipe drone
   const droneOsc = ctx.createOscillator();
   const droneGain = ctx.createGain();
@@ -362,7 +399,7 @@ function createMezwedDroneAndMelody(ctx: AudioContext, destination: GainNode) {
   let step = 0;
 
   const playReedNote = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const reedOsc = ctx.createOscillator();
     const reedGain = ctx.createGain();
 
@@ -380,8 +417,8 @@ function createMezwedDroneAndMelody(ctx: AudioContext, destination: GainNode) {
     currentOscillators.push(reedOsc);
 
     step++;
-    if (isPlaying) {
-      setTimeout(playReedNote, 220 + (step % 3 === 0 ? 120 : 0));
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playReedNote, 220 + (step % 3 === 0 ? 120 : 0), token);
     }
   };
 
@@ -389,13 +426,13 @@ function createMezwedDroneAndMelody(ctx: AudioContext, destination: GainNode) {
 }
 
 // 4. Darbuka (Goblet Drum Doum & Tak Polyphony)
-function createDarbukaRhythm(ctx: AudioContext, destination: GainNode) {
+function createDarbukaRhythm(ctx: AudioContext, destination: GainNode, token: number) {
   let beat = 0;
   // Maqsum rhythm: DOUM - TAK - [rest] - TAK - DOUM - [rest] - TAK - [rest]
   const pattern = ['doum', 'tak', 'tak', 'doum', 'tak', 'tak', 'tak', 'doum'];
 
   const playHit = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const hitType = pattern[beat % pattern.length];
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -423,8 +460,8 @@ function createDarbukaRhythm(ctx: AudioContext, destination: GainNode) {
     currentOscillators.push(osc);
 
     beat++;
-    if (isPlaying) {
-      setTimeout(playHit, 260);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playHit, 260, token);
     }
   };
 
@@ -432,10 +469,10 @@ function createDarbukaRhythm(ctx: AudioContext, destination: GainNode) {
 }
 
 // 5. Bendir (Sufi Frame Drum)
-function createBendirRhythm(ctx: AudioContext, destination: GainNode) {
+function createBendirRhythm(ctx: AudioContext, destination: GainNode, token: number) {
   let step = 0;
   const playDrum = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const osc = ctx.createOscillator();
     const drumGain = ctx.createGain();
 
@@ -455,20 +492,20 @@ function createBendirRhythm(ctx: AudioContext, destination: GainNode) {
     currentOscillators.push(osc);
 
     step++;
-    if (isPlaying) {
-      setTimeout(playDrum, 300);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playDrum, 300, token);
     }
   };
   playDrum();
 }
 
 // 6. Malouf (Andalusian & Tunisian Classical Heritage Strings)
-function createMaloufOrchestra(ctx: AudioContext, destination: GainNode) {
+function createMaloufOrchestra(ctx: AudioContext, destination: GainNode, token: number) {
   const maloufScale = [261.63, 293.66, 327.0, 349.23, 392.0, 436.0, 493.88, 523.25]; // Nawa mode
   let idx = 0;
 
   const playPhrase = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -494,20 +531,20 @@ function createMaloufOrchestra(ctx: AudioContext, destination: GainNode) {
 
     currentOscillators.push(osc1, osc2);
     idx++;
-    if (isPlaying) {
-      setTimeout(playPhrase, 380 + (idx % 4 === 0 ? 250 : 0));
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playPhrase, 380 + (idx % 4 === 0 ? 250 : 0), token);
     }
   };
   playPhrase();
 }
 
 // 7. Gnawa (Guembri Bass Pluck & Qraqeb Clack)
-function createGnawaGuembriAndQraqeb(ctx: AudioContext, destination: GainNode) {
+function createGnawaGuembriAndQraqeb(ctx: AudioContext, destination: GainNode, token: number) {
   const guembriBass = [55.0, 65.41, 73.42, 82.41, 98.0]; // Low D/A pentatonic
   let step = 0;
 
   const playGnawa = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const bassOsc = ctx.createOscillator();
     const bassGain = ctx.createGain();
 
@@ -530,8 +567,8 @@ function createGnawaGuembriAndQraqeb(ctx: AudioContext, destination: GainNode) {
     currentOscillators.push(bassOsc);
 
     step++;
-    if (isPlaying) {
-      setTimeout(playGnawa, 280);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playGnawa, 280, token);
     }
   };
 
@@ -606,9 +643,9 @@ function createOceanWaves(ctx: AudioContext, destination: GainNode) {
 }
 
 // 10. Oasis Spring & Bubbling Water
-function createOasisSpring(ctx: AudioContext, destination: GainNode) {
+function createOasisSpring(ctx: AudioContext, destination: GainNode, token: number) {
   const playDrop = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -627,17 +664,17 @@ function createOasisSpring(ctx: AudioContext, destination: GainNode) {
     osc.stop(ctx.currentTime + 0.12);
     currentOscillators.push(osc);
 
-    if (isPlaying) {
-      setTimeout(playDrop, 90 + Math.random() * 160);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playDrop, 90 + Math.random() * 160, token);
     }
   };
   playDrop();
 }
 
 // 11. Ichkeul Birdsong Biophony
-function createBirdBiophony(ctx: AudioContext, destination: GainNode) {
+function createBirdBiophony(ctx: AudioContext, destination: GainNode, token: number) {
   const playChirp = () => {
-    if (!isPlaying) return;
+    if (!isPlaying || currentSessionToken !== token) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -657,15 +694,15 @@ function createBirdBiophony(ctx: AudioContext, destination: GainNode) {
     osc.stop(ctx.currentTime + 0.18);
     currentOscillators.push(osc);
 
-    if (isPlaying) {
-      setTimeout(playChirp, 400 + Math.random() * 900);
+    if (isPlaying && currentSessionToken === token) {
+      registerSynthTimeout(playChirp, 400 + Math.random() * 900, token);
     }
   };
   playChirp();
 }
 
 // 12. Medina Atmosphere (Morning Call & Echo Drone)
-function createMedinaAtmosphere(ctx: AudioContext, destination: GainNode) {
+function createMedinaAtmosphere(ctx: AudioContext, destination: GainNode, token: number) {
   const droneOsc = ctx.createOscillator();
   const droneGain = ctx.createGain();
 
@@ -678,5 +715,5 @@ function createMedinaAtmosphere(ctx: AudioContext, destination: GainNode) {
   droneOsc.start();
   currentOscillators.push(droneOsc);
 
-  createOudMelody(ctx, destination);
+  createOudMelody(ctx, destination, token);
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppTab, Language, UserSettings } from '../types';
 import { TRANSLATIONS } from '../data/mockData';
+import { HumasonLogo } from './HumasonLogo';
 
 interface SideNavBarProps {
   activeTab: AppTab;
@@ -42,12 +43,10 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({
       <div className="mb-4 sm:mb-6 mt-1 sm:mt-2 flex flex-col items-center justify-center">
         <button 
           onClick={() => setActiveTab('library')}
-          className="group focus:outline-none"
+          className="group focus:outline-none p-1 rounded-2xl transition-all"
           title="HUMASON Marketplace - Bibliothèque"
         >
-          <span className="font-extrabold text-2xl sm:text-3xl md:text-4xl text-[#00A6D6] tracking-tighter group-hover:scale-110 transition-transform">
-            H
-          </span>
+          <HumasonLogo size="md" />
         </button>
       </div>
 
